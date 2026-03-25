@@ -39,6 +39,7 @@ enum e_key {
 	CTRL_F         = 6,
 	CTRL_G         = 7,
 	CTRL_H         = 8,
+	CTRL_P         = 16,
 	CTRL_C_KEY     = 3,
 	CTRL_V         = 22,
 	CTRL_X         = 24,

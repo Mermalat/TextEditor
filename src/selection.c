@@ -52,12 +52,63 @@ char	*get_selected_text(int *out_len)
 	return (buf.s);
 }
 
+static const char	g_b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static void	osc52_write_chunk(unsigned char *n3, int chunk)
+{
+	unsigned char	n4[4];
+	int				j;
+
+	n4[0] = (n3[0] & 0xfc) >> 2;
+	n4[1] = ((n3[0] & 0x03) << 4) + ((n3[1] & 0xf0) >> 4);
+	n4[2] = ((n3[1] & 0x0f) << 2) + ((n3[2] & 0xc0) >> 6);
+	n4[3] = n3[2] & 0x3f;
+	if (chunk == 1)
+	{
+		n4[2] = 64;
+		n4[3] = 64;
+	}
+	else if (chunk == 2)
+		n4[3] = 64;
+	j = -1;
+	while (++j < 4)
+	{
+		if (n4[j] == 64)
+			write(STDOUT_FILENO, "=", 1);
+		else
+			write(STDOUT_FILENO, &g_b64[n4[j]], 1);
+	}
+}
+
+static void	osc52_copy(const char *data, int len)
+{
+	int				i;
+	unsigned char	n3[3];
+
+	write(STDOUT_FILENO, "\033]52;c;", 7);
+	i = 0;
+	while (i < len)
+	{
+		n3[0] = data[i++];
+		n3[1] = 0;
+		if (i < len)
+			n3[1] = data[i++];
+		n3[2] = 0;
+		if (i < len)
+			n3[2] = data[i++];
+		osc52_write_chunk(n3, len - (i - 3));
+	}
+	write(STDOUT_FILENO, "\a", 1);
+}
+
 void	copy_selection(void)
 {
 	if (!g_ed.sel.active)
 		return ;
 	free(g_ed.clipboard);
 	g_ed.clipboard = get_selected_text(&g_ed.clipboard_len);
+	if (g_ed.clipboard)
+		osc52_copy(g_ed.clipboard, g_ed.clipboard_len);
 }
 
 static void	del_sel_multiline(int sr, int sc, int er, int ec)
@@ -92,13 +143,14 @@ void	delete_selection(void)
 	int		bd[4];
 	char	*st;
 	t_line	*l;
+	int		st_len;
 
 	if (!g_ed.sel.active)
 		return ;
 	normalize_selection(&bd[0], &bd[1], &bd[2], &bd[3]);
-	st = get_selected_text(&bd[2]);
+	st = get_selected_text(&st_len);
 	push_undo(UNDO_DELETE_SELECTION, (t_pos){bd[0], bd[1]},
-		(t_str){st, bd[2]}, (t_pos){bd[2], bd[3]});
+		(t_str){st, st_len}, (t_pos){bd[2], bd[3]});
 	free(st);
 	if (bd[0] == bd[2])
 	{

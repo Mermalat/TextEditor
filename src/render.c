@@ -19,7 +19,7 @@ static void	draw_tb_itm(const char *i, int *c, int *r)
 		print_padding(g_ed.screen_cols - *c + 1);
 		(*r)++;
 		set_cursor_position(*r, 1);
-		write(STDOUT_FILENO, "\033[K\033[1;37;44m", 13);
+		write(STDOUT_FILENO, "\033[K\033[1;37;48;5;208m", 19);
 		*c = 1;
 	}
 	write(STDOUT_FILENO, " ", 1);
@@ -36,14 +36,14 @@ void	render_toolbox(void)
 	int			i;
 
 	set_cursor_position(1, 1);
-	write(STDOUT_FILENO, "\033[K\033[1;37;44m", 13);
+	write(STDOUT_FILENO, "\033[K\033[1;37;48;5;208m", 19);
 	c = 1; r = 1; i = -1;
 	while (++i < 11)
 		draw_tb_itm(itr[i], &c, &r);
 	print_padding(g_ed.screen_cols - c + 1);
 	write(STDOUT_FILENO, "\033[0m", 4);
 	set_cursor_position(r + 1, 1);
-	write(STDOUT_FILENO, "\033[K\033[36m", 8);
+	write(STDOUT_FILENO, "\033[K\033[38;5;208m", 15);
 	i = -1;
 	while (++i < g_ed.screen_cols)
 		write(STDOUT_FILENO, "-", 1);
