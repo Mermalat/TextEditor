@@ -1,0 +1,2210 @@
+#ifndef EDITOR_H
+# define EDITOR_H
+
+# include <stdio.h>
+# include <stdlib.h>
+# include <string.h>
+# include <unistd.h>
+# include <termios.h>
+# include <sys/ioctl.h>
+# include <ctype.h>
+# include <dirent.h>
+# include <sys/stat.h>
+# include <locale.h>
+# include <wchar.h>
+# include <errno.h>
+
+# define TOOLBOX_HEIGHT		3
+# define LINE_NUM_WIDTH		5
+# define INITIAL_LINE_CAP	128
+# define CLIPBOARD_CAP		4096
+# define MAX_SEARCH_LEN		256
+# define MAX_FILENAME		512
+# define MAX_PATH_LEN		1024
+
+enum e_key {
+	KEY_NULL       = 0,
+	KEY_ENTER      = 13,
+	KEY_ESC        = 27,
+	KEY_BACKSPACE  = 127,
+	KEY_ARROW_UP   = 1000,
+	KEY_ARROW_DOWN,
+	KEY_ARROW_LEFT,
+	KEY_ARROW_RIGHT,
+	KEY_HOME,
+	KEY_END,
+	KEY_PAGE_UP,
+	KEY_PAGE_DOWN,
+	KEY_DELETE,
+	CTRL_F         = 6,
+	CTRL_G         = 7,
+	CTRL_H         = 8,
+	CTRL_P         = 16,
+	CTRL_C_KEY     = 3,
+	CTRL_V         = 22,
+	CTRL_X         = 24,
+	CTRL_Z         = 26,
+	CTRL_S         = 19,
+	CTRL_O         = 15,
+	CTRL_BACKSPACE = 2000,
+	CTRL_ARROW_LEFT   = 2100,
+	CTRL_ARROW_RIGHT  = 2101,
+	CTRL_ARROW_UP     = 2102,
+	CTRL_ARROW_DOWN   = 2103,
+	CTRL_SHIFT_LEFT   = 2200,
+	CTRL_SHIFT_RIGHT  = 2201,
+	CTRL_SHIFT_UP     = 2202,
+	CTRL_SHIFT_DOWN   = 2203,
+	CTRL_SHIFT_S      = 2300
+};
+
+typedef enum e_undo_type {
+	UNDO_INSERT_CHAR,
+	UNDO_DELETE_CHAR,
+	UNDO_INSERT_LINE,
+	UNDO_DELETE_LINE,
+	UNDO_MERGE_LINE,
+	UNDO_SPLIT_LINE,
+	UNDO_REPLACE_ALL,
+	UNDO_DELETE_SELECTION,
+	UNDO_PASTE
+}	t_undo_type;
+
+typedef struct s_line {
+	char			*text;
+	int				len;
+	int				cap;
+	struct s_line	*prev;
+	struct s_line	*next;
+}	t_line;
+
+typedef struct s_pos {
+	int	r;
+	int	c;
+}	t_pos;
+
+typedef struct s_str {
+	const char	*s;
+	int			len;
+}	t_str;
+
+typedef struct s_buf {
+	char	*s;
+	int		len;
+	int		cap;
+}	t_buf;
+
+typedef struct s_undo_action {
+	t_undo_type				type;
+	int						row;
+	int						col;
+	char					*data;
+	int						data_len;
+	int						extra_row;
+	int						extra_col;
+	char					*extra_data;
+	int						extra_data_len;
+	struct s_undo_action	*next;
+}	t_undo_action;
+
+typedef struct s_search_match {
+	int	row;
+	int	col;
+	int	len;
+}	t_search_match;
+
+typedef struct s_selection {
+	int	active;
+	int	start_row;
+	int	start_col;
+	int	end_row;
+	int	end_col;
+}	t_selection;
+
+typedef struct s_editor {
+	t_line			*head;
+	int				num_lines;
+	int				cursor_row;
+	int				cursor_col;
+	int				scroll_row;
+	int				scroll_col;
+	int				screen_rows;
+	int				screen_cols;
+	char			filename[MAX_FILENAME];
+	int				modified;
+	int				running;
+	t_selection		sel;
+	char			*clipboard;
+	int				clipboard_len;
+	t_search_match	*matches;
+	int				match_count;
+	int				current_match;
+	int				search_active;
+	char			search_query[MAX_SEARCH_LEN];
+	t_undo_action	*undo_stack;
+	struct termios	orig_termios;
+}	t_editor;
+
+extern t_editor	g_ed;
+
+/* Terminal */
+void	enable_raw_mode(void);
+void	disable_raw_mode(void);
+int		read_key(void);
+void	get_terminal_size(int *rows, int *cols);
+void	die(const char *s);
+
+/* Line management */
+t_line	*create_line(void);
+void	free_line(t_line *line);
+t_line	*get_line_at(int index);
+void	insert_line_after(t_line *after, t_line *new_line);
+void	remove_line(t_line *line);
+void	line_insert_char(t_line *line, int pos, const char *ch, int ch_len);
+void	line_delete_char(t_line *line, int pos, int ch_len);
+void	line_insert_text(t_line *line, int pos, const char *text, int text_len);
+void	ensure_capacity(t_line *line, int needed);
+
+/* UTF-8 Utilities */
+int		utf8_char_len(unsigned char c);
+int		prev_utf8_char_start(const char *text, int pos);
+int		next_utf8_char_end(const char *text, int len, int pos);
+int		byte_to_display_col(const char *text, int byte_pos);
+int		display_to_byte_col(const char *text, int len, int dcol);
+int		word_start_before(const char *text, int pos);
+int		word_end_after(const char *text, int len, int pos);
+
+/* Rendering */
+void	render_screen(void);
+void	render_toolbox(void);
+void	set_cursor_position(int row, int col);
+void	render_status_bar(void);
+void	render_lines(void);
+
+void	print_padding(int len);
+
+/* File I/O */
+void	open_file(void);
+void	save_file(void);
+void	save_as_file(void);
+void	file_browser(char *result_path, int save_mode);
+void	render_browser_screen(char *cwd, char entries[512][256], int *is_dir, int count, int selected, int save_mode);
+
+/* Prompt */
+int		prompt_input(const char *prompt, char *buf, int buf_size);
+
+/* Selection */
+void	start_selection(void);
+void	update_selection(void);
+void	clear_selection(void);
+char	*get_selected_text(int *out_len);
+void	delete_selection(void);
+void	normalize_selection(int *sr, int *sc, int *er, int *ec);
+int		is_in_selection(int row, int byte_col);
+
+/* Clipboard */
+void	copy_selection(void);
+void	cut_selection(void);
+void	paste(void);
+
+/* Search */
+void	search_text(void);
+void	navigate_matches(void);
+void	replace_all(void);
+void	clear_search(void);
+void	find_matches(const char *query);
+int		is_search_match(int row, int byte_col);
+
+/* Undo */
+void	push_undo(t_undo_type t, t_pos p, t_str s, t_pos p_ex);
+void	undo(void);
+void	free_undo_stack(void);
+void	execute_complex_undo(t_undo_action *a);
+
+/* Events & Main */
+void	process_keypress(void);
+void	try_exit(void);
+void	init_editor(void);
+void	free_editor(void);
+
+/* Event Dispatchers */
+void	handle_file_ops(int key);
+void	handle_search_ops(int key);
+void	handle_clipboard_ops(int key);
+void	handle_movement(int key);
+void	handle_selection_movement(int key);
+void	handle_deletion(int key);
+
+#endif
+#include "editor.h"
+
+static void	print_browser_header(char *cwd)
+{
+	char	h[MAX_PATH_LEN + 80];
+	int		l;
+
+	write(STDOUT_FILENO, "\033[2J\033[H", 7);
+	l = snprintf(h, sizeof(h), "\033[1;36m === File Browser ===\033[0m\r\n\033[33m %s\033[0m\r\n\r\n", cwd);
+	write(STDOUT_FILENO, h, l);
+}
+
+static void	print_browser_entry(char *ent, int is_dir, int is_sel)
+{
+	char	b[512];
+	int		l;
+
+	if (is_sel)
+	{
+		if (is_dir)
+			l = snprintf(b, sizeof(b), " \033[7;34m > [%s/]\033[0m\r\n", ent);
+		else
+			l = snprintf(b, sizeof(b), " \033[7m > %s\033[0m\r\n", ent);
+	}
+	else
+	{
+		if (is_dir)
+			l = snprintf(b, sizeof(b), "   \033[34m[%s/]\033[0m\r\n", ent);
+		else
+			l = snprintf(b, sizeof(b), "   %s\r\n", ent);
+	}
+	write(STDOUT_FILENO, b, l);
+}
+
+void	render_browser_screen(char *cwd, char ent[512][256], int *is_dir, int cnt, int sel, int sm)
+{
+	int			tr;
+	int			scroll;
+	int			i;
+	const char	*instr;
+
+	print_browser_header(cwd);
+	tr = g_ed.screen_rows - 6;
+	if (sel >= tr) scroll = sel - tr + 1;
+	else scroll = 0;
+	i = scroll;
+	while (i < cnt && i < scroll + tr)
+	{
+		print_browser_entry(ent[i], is_dir[i], i == sel);
+		i++;
+	}
+	instr = "\r\n\033[90m Up/Down: Navigate | Enter: Select | ESC: Cancel";
+	write(STDOUT_FILENO, instr, strlen(instr));
+	if (sm)
+		write(STDOUT_FILENO, " | n: New filename\033[0m", 22);
+	write(STDOUT_FILENO, "\033[0m\r\n", 6);
+}
+
+#include "editor.h"
+
+static void	load_dir_entries(DIR *d, char (*ent)[256], int *is_dir, int *cnt, char *cwd)
+{
+	struct dirent	*e;
+	struct stat		st;
+	char			fpath[MAX_PATH_LEN];
+
+	*cnt = 0;
+	strcpy(ent[*cnt], "..");
+	is_dir[*cnt] = 1;
+	(*cnt)++;
+	while ((e = readdir(d)) != NULL && *cnt < 512)
+	{
+		if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
+			continue ;
+		strcpy(ent[*cnt], e->d_name);
+		snprintf(fpath, sizeof(fpath), "%s/%s", cwd, e->d_name);
+		is_dir[*cnt] = (stat(fpath, &st) == 0 && S_ISDIR(st.st_mode));
+		(*cnt)++;
+	}
+}
+
+static int	handle_browser_key(int key, int *sel, int cnt)
+{
+	if (key == KEY_ARROW_UP && *sel > 0)
+		(*sel)--;
+	else if (key == KEY_ARROW_DOWN && *sel < cnt - 1)
+		(*sel)++;
+	else if (key == KEY_ENTER || key == KEY_ESC || key == 'n')
+		return (key);
+	return (0);
+}
+
+static int	handle_browser_enter(char (*ent)[256], int *is_dir, int sel, char *cwd, char *rp)
+{
+	char	np[MAX_PATH_LEN];
+	char	*sl;
+
+	if (is_dir[sel])
+	{
+		if (strcmp(ent[sel], "..") == 0)
+		{
+			sl = strrchr(cwd, '/');
+			if (sl && sl != cwd) *sl = '\0';
+			else strcpy(cwd, "/");
+		}
+		else
+		{
+			snprintf(np, sizeof(np), "%s/%s", cwd, ent[sel]);
+			strcpy(cwd, np);
+		}
+		return (1);
+	}
+	snprintf(rp, MAX_PATH_LEN, "%s/%s", cwd, ent[sel]);
+	return (2);
+}
+
+static int	browse_loop_action(int k, char (*ent)[256], int *dir, int *sel, char *cwd, char *rp, int sm)
+{
+	char	fn[256];
+
+	if (k == KEY_ESC)
+	{
+		rp[0] = '\0';
+		return (1);
+	}
+	if (k == KEY_ENTER)
+	{
+		if (handle_browser_enter(ent, dir, *sel, cwd, rp) == 2)
+			return (1);
+		*sel = 0;
+	}
+	if (sm && k == 'n')
+	{
+		if (prompt_input("Filename:", fn, 256) && fn[0])
+		{
+			snprintf(rp, MAX_PATH_LEN, "%s/%s", cwd, fn);
+			return (1);
+		}
+	}
+	return (0);
+}
+
+void	file_browser(char *result_path, int save_mode)
+{
+	char	cwd[MAX_PATH_LEN];
+	int		sel;
+	DIR		*d;
+	char	ent[512][256];
+	int		is_dir[512];
+	int		cnt;
+
+	if (!getcwd(cwd, sizeof(cwd))) strcpy(cwd, ".");
+	sel = 0;
+	while (1)
+	{
+		d = opendir(cwd);
+		if (!d) { result_path[0] = '\0'; return ; }
+		load_dir_entries(d, ent, is_dir, &cnt, cwd);
+		closedir(d);
+		if (sel >= cnt) sel = cnt - 1;
+		if (sel < 0) sel = 0;
+		render_browser_screen(cwd, ent, is_dir, cnt, sel, save_mode);
+		if (browse_loop_action(handle_browser_key(read_key(), &sel, cnt), ent, is_dir, &sel, cwd, result_path, save_mode))
+			return ;
+	}
+}
+
+#include "editor.h"
+
+static void	paste_newline(void)
+{
+	t_line	*cur;
+	t_line	*nl;
+
+	cur = get_line_at(g_ed.cursor_row);
+	nl = create_line();
+	if (g_ed.cursor_col < cur->len)
+	{
+		line_insert_text(nl, 0, cur->text + g_ed.cursor_col,
+			cur->len - g_ed.cursor_col);
+		cur->len = g_ed.cursor_col;
+		cur->text[cur->len] = '\0';
+	}
+	insert_line_after(cur, nl);
+	g_ed.cursor_row++;
+	g_ed.cursor_col = 0;
+}
+
+static void	paste_char(int *i)
+{
+	int		clen;
+	t_line	*cur;
+
+	clen = utf8_char_len((unsigned char)g_ed.clipboard[*i]);
+	cur = get_line_at(g_ed.cursor_row);
+	line_insert_char(cur, g_ed.cursor_col, &g_ed.clipboard[*i], clen);
+	g_ed.cursor_col += clen;
+	*i += clen - 1;
+}
+
+void	paste(void)
+{
+	int	sr;
+	int	sc;
+	int	i;
+
+	if (!g_ed.clipboard || g_ed.clipboard_len == 0)
+		return ;
+	if (g_ed.sel.active)
+		delete_selection();
+	sr = g_ed.cursor_row;
+	sc = g_ed.cursor_col;
+	i = -1;
+	while (++i < g_ed.clipboard_len)
+	{
+		if (g_ed.clipboard[i] == '\n')
+			paste_newline();
+		else
+			paste_char(&i);
+	}
+	push_undo(UNDO_PASTE, (t_pos){sr, sc},
+		(t_str){g_ed.clipboard, g_ed.clipboard_len},
+		(t_pos){g_ed.cursor_row, g_ed.cursor_col});
+	g_ed.modified = 1;
+}
+
+void	handle_clipboard_ops(int key)
+{
+	if (key == CTRL_C_KEY)
+		copy_selection();
+	else if (key == CTRL_X)
+		cut_selection();
+	else if (key == CTRL_V)
+		paste();
+}
+
+void	handle_search_ops(int key)
+{
+	if (key == CTRL_F)
+		search_text();
+	else if (key == CTRL_G)
+		navigate_matches();
+	else if (key == CTRL_H)
+		replace_all();
+}
+
+#include "editor.h"
+
+static void	handle_backspace(t_line *cur)
+{
+	int		pp;
+	int		cl;
+	t_line	*pl;
+	int		mc;
+
+	if (g_ed.sel.active) { delete_selection(); return ; }
+	if (g_ed.cursor_col > 0)
+	{
+		pp = prev_utf8_char_start(cur->text, g_ed.cursor_col);
+		cl = g_ed.cursor_col - pp;
+		push_undo(UNDO_DELETE_CHAR, (t_pos){g_ed.cursor_row, pp}, (t_str){cur->text + pp, cl}, (t_pos){0, 0});
+		line_delete_char(cur, pp, cl); g_ed.cursor_col = pp; g_ed.modified = 1;
+	}
+	else if (g_ed.cursor_row > 0)
+	{
+		pl = get_line_at(g_ed.cursor_row - 1); mc = pl->len;
+		push_undo(UNDO_MERGE_LINE, (t_pos){g_ed.cursor_row - 1, mc}, (t_str){NULL, 0}, (t_pos){0, 0});
+		line_insert_text(pl, pl->len, cur->text, cur->len);
+		remove_line(cur); free_line(cur);
+		g_ed.cursor_row--; g_ed.cursor_col = mc; g_ed.modified = 1;
+	}
+}
+
+static void	handle_delete(t_line *cur)
+{
+	int		cl;
+	t_line	*nl;
+
+	if (g_ed.sel.active) { delete_selection(); return ; }
+	if (g_ed.cursor_col < cur->len)
+	{
+		cl = utf8_char_len((unsigned char)cur->text[g_ed.cursor_col]);
+		push_undo(UNDO_DELETE_CHAR, (t_pos){g_ed.cursor_row, g_ed.cursor_col},
+			(t_str){cur->text + g_ed.cursor_col, cl}, (t_pos){0, 0});
+		line_delete_char(cur, g_ed.cursor_col, cl);
+		g_ed.modified = 1;
+	}
+	else if (cur->next)
+	{
+		nl = cur->next;
+		push_undo(UNDO_MERGE_LINE, (t_pos){g_ed.cursor_row, cur->len}, (t_str){NULL, 0}, (t_pos){0, 0});
+		line_insert_text(cur, cur->len, nl->text, nl->len);
+		remove_line(nl); free_line(nl);
+		g_ed.modified = 1;
+	}
+}
+
+static void	handle_ctrl_backspace(t_line *cur)
+{
+	int	nc;
+	int	dl;
+
+	if (g_ed.cursor_col > 0)
+	{
+		nc = word_start_before(cur->text, g_ed.cursor_col);
+		dl = g_ed.cursor_col - nc;
+		push_undo(UNDO_DELETE_CHAR, (t_pos){g_ed.cursor_row, nc},
+			(t_str){cur->text + nc, dl}, (t_pos){0, 0});
+		memmove(cur->text + nc, cur->text + g_ed.cursor_col,
+			cur->len - g_ed.cursor_col);
+		cur->len -= dl;
+		cur->text[cur->len] = '\0';
+		g_ed.cursor_col = nc;
+		g_ed.modified = 1;
+	}
+}
+
+void	handle_deletion(int key)
+{
+	t_line	*cur;
+
+	cur = get_line_at(g_ed.cursor_row);
+	if (key == KEY_BACKSPACE)
+		handle_backspace(cur);
+	else if (key == KEY_DELETE)
+		handle_delete(cur);
+	else if (key == CTRL_BACKSPACE)
+		handle_ctrl_backspace(cur);
+}
+
+#include "editor.h"
+
+static void	handle_mov_arrow(int key, t_line *cur)
+{
+	if (key == KEY_ARROW_LEFT)
+	{
+		if (g_ed.cursor_col > 0)
+			g_ed.cursor_col = prev_utf8_char_start(cur->text, g_ed.cursor_col);
+		else if (g_ed.cursor_row > 0)
+		{
+			g_ed.cursor_row--; cur = get_line_at(g_ed.cursor_row); g_ed.cursor_col = cur->len;
+		}
+	}
+	else if (key == KEY_ARROW_RIGHT)
+	{
+		if (g_ed.cursor_col < cur->len)
+			g_ed.cursor_col = next_utf8_char_end(cur->text, cur->len, g_ed.cursor_col);
+		else if (g_ed.cursor_row < g_ed.num_lines - 1)
+		{
+			g_ed.cursor_row++; g_ed.cursor_col = 0;
+		}
+	}
+	else if (key == KEY_ARROW_UP && g_ed.cursor_row > 0)
+	{
+		g_ed.cursor_row--; cur = get_line_at(g_ed.cursor_row);
+		if (g_ed.cursor_col > cur->len) g_ed.cursor_col = cur->len;
+	}
+	else if (key == KEY_ARROW_DOWN && g_ed.cursor_row < g_ed.num_lines - 1)
+	{
+		g_ed.cursor_row++; cur = get_line_at(g_ed.cursor_row);
+		if (g_ed.cursor_col > cur->len) g_ed.cursor_col = cur->len;
+	}
+}
+
+static void	handle_mov_page(int key, t_line *cur)
+{
+	int	t_r;
+
+	if (key == KEY_PAGE_UP)
+	{
+		t_r = g_ed.screen_rows - TOOLBOX_HEIGHT - 1; g_ed.cursor_row -= t_r;
+		if (g_ed.cursor_row < 0) g_ed.cursor_row = 0;
+		cur = get_line_at(g_ed.cursor_row);
+		if (g_ed.cursor_col > cur->len) g_ed.cursor_col = cur->len;
+	}
+	else if (key == KEY_PAGE_DOWN)
+	{
+		t_r = g_ed.screen_rows - TOOLBOX_HEIGHT - 1; g_ed.cursor_row += t_r;
+		if (g_ed.cursor_row >= g_ed.num_lines) g_ed.cursor_row = g_ed.num_lines - 1;
+		cur = get_line_at(g_ed.cursor_row);
+		if (g_ed.cursor_col > cur->len) g_ed.cursor_col = cur->len;
+	}
+	else if (key == KEY_HOME)
+		g_ed.cursor_col = 0;
+	else if (key == KEY_END)
+		g_ed.cursor_col = cur->len;
+}
+
+void	handle_movement(int key)
+{
+	t_line	*cur;
+
+	cur = get_line_at(g_ed.cursor_row);
+	clear_selection();
+	handle_mov_arrow(key, cur);
+	handle_mov_page(key, cur);
+}
+
+static void	handle_sel_arrow(int key, t_line *cur)
+{
+	if (key == CTRL_ARROW_LEFT)
+	{
+		if (g_ed.cursor_col > 0) g_ed.cursor_col = prev_utf8_char_start(cur->text, g_ed.cursor_col);
+		else if (g_ed.cursor_row > 0)
+		{
+			g_ed.cursor_row--; cur = get_line_at(g_ed.cursor_row); g_ed.cursor_col = cur->len;
+		}
+	}
+	else if (key == CTRL_ARROW_RIGHT)
+	{
+		if (g_ed.cursor_col < cur->len) g_ed.cursor_col = next_utf8_char_end(cur->text, cur->len, g_ed.cursor_col);
+		else if (g_ed.cursor_row < g_ed.num_lines - 1) { g_ed.cursor_row++; g_ed.cursor_col = 0; }
+	}
+	else if (key == CTRL_ARROW_UP && g_ed.cursor_row > 0)
+	{
+		g_ed.cursor_row--; cur = get_line_at(g_ed.cursor_row);
+		if (g_ed.cursor_col > cur->len) g_ed.cursor_col = cur->len;
+	}
+	else if (key == CTRL_ARROW_DOWN && g_ed.cursor_row < g_ed.num_lines - 1)
+	{
+		g_ed.cursor_row++; cur = get_line_at(g_ed.cursor_row);
+		if (g_ed.cursor_col > cur->len) g_ed.cursor_col = cur->len;
+	}
+}
+
+void	handle_selection_movement(int key)
+{
+	t_line	*cur;
+
+	cur = get_line_at(g_ed.cursor_row);
+	start_selection();
+	handle_sel_arrow(key, cur);
+	if (key == CTRL_SHIFT_LEFT)
+		g_ed.cursor_col = word_start_before(cur->text, g_ed.cursor_col);
+	else if (key == CTRL_SHIFT_RIGHT)
+		g_ed.cursor_col = word_end_after(cur->text, cur->len, g_ed.cursor_col);
+	else if (key == CTRL_SHIFT_UP && g_ed.cursor_row > 0)
+	{
+		g_ed.cursor_row--; g_ed.cursor_col = 0;
+	}
+	else if (key == CTRL_SHIFT_DOWN && g_ed.cursor_row < g_ed.num_lines - 1)
+	{
+		g_ed.cursor_row++; cur = get_line_at(g_ed.cursor_row); g_ed.cursor_col = cur->len;
+	}
+	update_selection();
+}
+
+#include "editor.h"
+
+void	try_exit(void)
+{
+	int			key;
+	const char	*msg;
+
+	if (g_ed.modified)
+	{
+		set_cursor_position(g_ed.screen_rows, 1);
+		write(STDOUT_FILENO, "\033[K", 3);
+		msg = "\033[7m Save changes? (y/n/ESC) \033[0m";
+		write(STDOUT_FILENO, msg, strlen(msg));
+		while (1)
+		{
+			key = read_key();
+			if (key == 'y' || key == 'Y')
+			{
+				save_file();
+				g_ed.running = 0;
+				return ;
+			}
+			else if (key == 'n' || key == 'N')
+			{
+				g_ed.running = 0;
+				return ;
+			}
+			else if (key == KEY_ESC)
+				return ;
+		}
+	}
+	g_ed.running = 0;
+}
+
+static void	handle_regular_char(int key)
+{
+	t_line	*c;
+	char	b[8];
+	int		cl;
+	int		j;
+
+	if (key >= 32)
+	{
+		if (g_ed.sel.active) delete_selection();
+		c = get_line_at(g_ed.cursor_row);
+		cl = utf8_char_len((unsigned char)key); b[0] = (char)key;
+		if (cl > 1)
+		{
+			j = 0;
+			while (++j < cl)
+			{
+				if (read(STDIN_FILENO, &b[j], 1) != 1) b[j] = 0;
+			}
+		}
+		b[cl] = '\0';
+		push_undo(UNDO_INSERT_CHAR, (t_pos){g_ed.cursor_row, g_ed.cursor_col},
+			(t_str){b, cl}, (t_pos){0, 0});
+		line_insert_char(c, g_ed.cursor_col, b, cl);
+		g_ed.cursor_col += cl; g_ed.modified = 1;
+	}
+}
+
+static void	handle_enter(void)
+{
+	t_line	*c;
+	t_line	*n;
+
+	if (g_ed.sel.active)
+		delete_selection();
+	c = get_line_at(g_ed.cursor_row);
+	push_undo(UNDO_SPLIT_LINE, (t_pos){g_ed.cursor_row, g_ed.cursor_col},
+		(t_str){NULL, 0}, (t_pos){0, 0});
+	n = create_line();
+	if (g_ed.cursor_col < c->len)
+	{
+		line_insert_text(n, 0, c->text + g_ed.cursor_col,
+			c->len - g_ed.cursor_col);
+		c->len = g_ed.cursor_col;
+		c->text[c->len] = '\0';
+	}
+	insert_line_after(c, n);
+	g_ed.cursor_row++;
+	g_ed.cursor_col = 0;
+	g_ed.modified = 1;
+}
+
+void	process_keypress(void)
+{
+	int		k;
+	t_line	*c;
+
+	k = read_key(); c = get_line_at(g_ed.cursor_row);
+	if (!c) return ;
+	if (k != CTRL_F && k != CTRL_G && g_ed.search_active &&
+		k != KEY_ARROW_UP && k != KEY_ARROW_DOWN &&
+		k != KEY_ARROW_LEFT && k != KEY_ARROW_RIGHT)
+		clear_search();
+	if (k == KEY_ESC) try_exit();
+	else if (k == CTRL_O || k == CTRL_S || k == CTRL_SHIFT_S)
+		handle_file_ops(k);
+	else if (k == CTRL_F || k == CTRL_G || k == CTRL_H)
+		handle_search_ops(k);
+	else if (k == CTRL_C_KEY || k == CTRL_X || k == CTRL_V)
+		handle_clipboard_ops(k);
+	else if (k == CTRL_Z) undo();
+	else if (k == KEY_BACKSPACE || k == KEY_DELETE || k == CTRL_BACKSPACE)
+		handle_deletion(k);
+	else if (k == KEY_ENTER) handle_enter();
+	else if (k >= KEY_ARROW_UP && k <= KEY_PAGE_DOWN) handle_movement(k);
+	else if (k >= CTRL_ARROW_LEFT && k <= CTRL_SHIFT_DOWN)
+		handle_selection_movement(k);
+	else handle_regular_char(k);
+}
+
+#include "editor.h"
+
+static void	free_all_lines(void)
+{
+	t_line	*l;
+	t_line	*nx;
+
+	l = g_ed.head;
+	while (l)
+	{
+		nx = l->next;
+		free_line(l);
+		l = nx;
+	}
+	g_ed.head = NULL;
+	g_ed.num_lines = 0;
+	free_undo_stack();
+	clear_search();
+	clear_selection();
+}
+
+static void	read_file_lines(FILE *f)
+{
+	char	buf[4096];
+	t_line	*p;
+	t_line	*nl;
+	int		b;
+
+	p = NULL;
+	while (fgets(buf, sizeof(buf), f))
+	{
+		nl = create_line();
+		b = strlen(buf);
+		if (b > 0 && buf[b - 1] == '\n')
+			buf[--b] = '\0';
+		if (b > 0 && buf[b - 1] == '\r')
+			buf[--b] = '\0';
+		line_insert_text(nl, 0, buf, b);
+		insert_line_after(p, nl);
+		p = nl;
+	}
+}
+
+void	open_file(void)
+{
+	char	path[MAX_PATH_LEN];
+	FILE	*f;
+
+	file_browser(path, 0);
+	if (path[0] == '\0')
+		return ;
+	f = fopen(path, "r");
+	if (!f)
+		return ;
+	free_all_lines();
+	read_file_lines(f);
+	fclose(f);
+	if (!g_ed.head)
+	{
+		g_ed.head = create_line();
+		g_ed.num_lines = 1;
+	}
+	strcpy(g_ed.filename, path);
+	g_ed.cursor_row = 0; g_ed.cursor_col = 0;
+	g_ed.scroll_row = 0; g_ed.modified = 0;
+}
+
+static void	write_file_to_disk(const char *path)
+{
+	FILE	*f;
+	t_line	*l;
+
+	f = fopen(path, "w");
+	if (!f)
+		return ;
+	l = g_ed.head;
+	while (l)
+	{
+		fwrite(l->text, 1, l->len, f);
+		fputc('\n', f);
+		l = l->next;
+	}
+	fclose(f);
+	strcpy(g_ed.filename, path);
+	g_ed.modified = 0;
+}
+
+void	save_file(void)
+{
+	if (g_ed.filename[0])
+		write_file_to_disk(g_ed.filename);
+	else
+		save_as_file();
+}
+
+void	save_as_file(void)
+{
+	char	path[MAX_PATH_LEN];
+
+	file_browser(path, 1);
+	if (path[0] == '\0')
+		return ;
+	write_file_to_disk(path);
+}
+
+void	handle_file_ops(int key)
+{
+	if (key == CTRL_O)
+		open_file();
+	else if (key == CTRL_S)
+		save_file();
+	else if (key == CTRL_SHIFT_S)
+		save_as_file();
+}
+
+#include "editor.h"
+
+t_line	*create_line(void)
+{
+	t_line	*l;
+
+	l = malloc(sizeof(t_line));
+	if (!l)
+		return (NULL);
+	l->cap = INITIAL_LINE_CAP;
+	l->text = malloc(l->cap);
+	if (!l->text)
+	{
+		free(l);
+		return (NULL);
+	}
+	l->text[0] = '\0';
+	l->len = 0;
+	l->prev = NULL;
+	l->next = NULL;
+	return (l);
+}
+
+void	free_line(t_line *line)
+{
+	if (line)
+	{
+		free(line->text);
+		free(line);
+	}
+}
+
+t_line	*get_line_at(int index)
+{
+	t_line	*l;
+	int		i;
+
+	l = g_ed.head;
+	i = 0;
+	while (i < index && l)
+	{
+		l = l->next;
+		i++;
+	}
+	return (l);
+}
+
+void	insert_line_after(t_line *after, t_line *new_line)
+{
+	if (!after)
+	{
+		new_line->next = g_ed.head;
+		if (g_ed.head)
+			g_ed.head->prev = new_line;
+		g_ed.head = new_line;
+	}
+	else
+	{
+		new_line->next = after->next;
+		new_line->prev = after;
+		if (after->next)
+			after->next->prev = new_line;
+		after->next = new_line;
+	}
+	g_ed.num_lines++;
+}
+
+void	remove_line(t_line *line)
+{
+	if (line->prev)
+		line->prev->next = line->next;
+	else
+		g_ed.head = line->next;
+	if (line->next)
+		line->next->prev = line->prev;
+	g_ed.num_lines--;
+}
+
+#include "editor.h"
+
+void	ensure_capacity(t_line *line, int needed)
+{
+	if (line->len + needed + 1 > line->cap)
+	{
+		while (line->cap < line->len + needed + 1)
+			line->cap *= 2;
+		line->text = realloc(line->text, line->cap);
+	}
+}
+
+void	line_insert_char(t_line *line, int pos, const char *ch, int ch_len)
+{
+	ensure_capacity(line, ch_len);
+	memmove(line->text + pos + ch_len, line->text + pos, line->len - pos);
+	memcpy(line->text + pos, ch, ch_len);
+	line->len += ch_len;
+	line->text[line->len] = '\0';
+}
+
+void	line_delete_char(t_line *line, int pos, int ch_len)
+{
+	if (pos + ch_len > line->len)
+		return ;
+	memmove(line->text + pos, line->text + pos + ch_len,
+		line->len - pos - ch_len);
+	line->len -= ch_len;
+	line->text[line->len] = '\0';
+}
+
+void	line_insert_text(t_line *line, int pos, const char *txt, int txt_len)
+{
+	ensure_capacity(line, txt_len);
+	memmove(line->text + pos + txt_len, line->text + pos, line->len - pos);
+	memcpy(line->text + pos, txt, txt_len);
+	line->len += txt_len;
+	line->text[line->len] = '\0';
+}
+
+#include "editor.h"
+#include <signal.h>
+
+t_editor	g_ed;
+
+void	die(const char *s)
+{
+	write(STDOUT_FILENO, "\033[2J\033[H", 7);
+	perror(s);
+	exit(1);
+}
+
+static void	handle_sigwinch(int sig)
+{
+	(void)sig;
+	get_terminal_size(&g_ed.screen_rows, &g_ed.screen_cols);
+}
+
+void	init_editor(void)
+{
+	memset(&g_ed, 0, sizeof(t_editor));
+	g_ed.head = create_line();
+	g_ed.num_lines = 1;
+	g_ed.running = 1;
+	g_ed.current_match = -1;
+	get_terminal_size(&g_ed.screen_rows, &g_ed.screen_cols);
+}
+
+void	free_editor(void)
+{
+	t_line	*l;
+	t_line	*nx;
+
+	l = g_ed.head;
+	while (l)
+	{
+		nx = l->next;
+		free_line(l);
+		l = nx;
+	}
+	free_undo_stack();
+	free(g_ed.clipboard);
+	free(g_ed.matches);
+}
+
+int	main(void)
+{
+	setlocale(LC_ALL, "");
+	init_editor();
+	enable_raw_mode();
+	signal(SIGWINCH, handle_sigwinch);
+	while (g_ed.running)
+	{
+		render_screen();
+		process_keypress();
+	}
+	disable_raw_mode();
+	write(STDOUT_FILENO, "\033[2J\033[H", 7);
+	free_editor();
+	return (0);
+}
+
+#include "editor.h"
+
+static void	setup_prompt(int r, const char *p)
+{
+	set_cursor_position(r, 1);
+	write(STDOUT_FILENO, "\033[K\033[7m", 7);
+	write(STDOUT_FILENO, p, strlen(p));
+	write(STDOUT_FILENO, "\033[0m ", 5);
+}
+
+static void	handle_prompt_backspace(char *buf, int *len)
+{
+	if (*len > 0)
+	{
+		*len = prev_utf8_char_start(buf, *len);
+		buf[*len] = '\0';
+	}
+}
+
+static void	handle_prompt_char(char *buf, int *len, int buf_size, int key)
+{
+	int		cl;
+	int		j;
+	char	cb;
+
+	cl = utf8_char_len((unsigned char)key);
+	if (cl == 1 && *len + 1 < buf_size)
+	{
+		buf[(*len)++] = (char)key;
+		buf[*len] = '\0';
+	}
+	else if (cl > 1 && *len + cl < buf_size)
+	{
+		buf[(*len)++] = (char)key;
+		j = 0;
+		while (++j < cl)
+		{
+			if (read(STDIN_FILENO, &cb, 1) == 1)
+				buf[(*len)++] = cb;
+		}
+		buf[*len] = '\0';
+	}
+}
+
+int	prompt_input(const char *prompt, char *buf, int buf_size)
+{
+	int	len;
+	int	key;
+
+	setup_prompt(g_ed.screen_rows, prompt);
+	len = 0;
+	buf[0] = '\0';
+	while (1)
+	{
+		set_cursor_position(g_ed.screen_rows, strlen(prompt) + 2);
+		write(STDOUT_FILENO, "\033[K", 3);
+		write(STDOUT_FILENO, buf, len);
+		key = read_key();
+		if (key == KEY_ENTER)
+			return (1);
+		if (key == KEY_ESC)
+			return (0);
+		if (key == KEY_BACKSPACE || key == 127)
+			handle_prompt_backspace(buf, &len);
+		else if (key >= 32)
+			handle_prompt_char(buf, &len, buf_size, key);
+	}
+}
+#include "editor.h"
+
+void	print_padding(int len)
+{
+	int	i;
+
+	i = 0;
+	while (i++ < len)
+		write(STDOUT_FILENO, " ", 1);
+}
+
+void	render_status_bar(void)
+{
+	t_line	*c;
+	char	status[512];
+	int		sln;
+	int		dcol;
+	char	*f;
+
+	set_cursor_position(g_ed.screen_rows, 1);
+	write(STDOUT_FILENO, "\033[K\033[7m", 7);
+	c = get_line_at(g_ed.cursor_row);
+	dcol = 0;
+	if (c)
+		dcol = byte_to_display_col(c->text, g_ed.cursor_col);
+	f = "[New File]";
+	if (g_ed.filename[0])
+		f = g_ed.filename;
+	sln = snprintf(status, sizeof(status), " %s%s | Line: %d/%d | Col: %d ",
+			f, g_ed.modified ? " [*]" : "", g_ed.cursor_row + 1,
+			g_ed.num_lines, dcol + 1);
+	write(STDOUT_FILENO, status, sln);
+	if (g_ed.screen_cols - sln > 0)
+		print_padding(g_ed.screen_cols - sln);
+	write(STDOUT_FILENO, "\033[0m", 4);
+	set_cursor_position(TOOLBOX_HEIGHT + 1 + (g_ed.cursor_row - g_ed.scroll_row),
+		LINE_NUM_WIDTH + 1 + dcol);
+}
+
+static void	prt_char(t_line *ln, int idx, int *by)
+{
+	int	cl;
+	int	sel;
+	int	srch;
+
+	cl = utf8_char_len((unsigned char)ln->text[*by]);
+	sel = is_in_selection(idx, *by);
+	srch = is_search_match(idx, *by);
+	if (srch == 2)
+		write(STDOUT_FILENO, "\033[1;37;42m", 10);
+	else if (srch == 1)
+		write(STDOUT_FILENO, "\033[44m", 5);
+	else if (sel)
+		write(STDOUT_FILENO, "\033[43m", 5);
+	write(STDOUT_FILENO, ln->text + *by, cl);
+	if (sel || srch)
+		write(STDOUT_FILENO, "\033[0m", 4);
+	*by += cl;
+}
+
+static void	prt_line(t_line *line, int idx)
+{
+	char	nbuf[32];
+	int		nln;
+	int		b;
+
+	nln = snprintf(nbuf, sizeof(nbuf), "\033[33m%4d\033[90m|\033[0m", idx + 1);
+	write(STDOUT_FILENO, nbuf, nln);
+	b = 0;
+	while (b < line->len)
+		prt_char(line, idx, &b);
+}
+
+void	render_lines(void)
+{
+	t_line	*ln;
+	int		i;
+	int		sr;
+	int		tr;
+
+	tr = g_ed.screen_rows - TOOLBOX_HEIGHT - 1;
+	ln = g_ed.head;
+	i = -1;
+	while (ln && ++i < g_ed.scroll_row)
+		ln = ln->next;
+	sr = -1;
+	while (++sr < tr)
+	{
+		set_cursor_position(TOOLBOX_HEIGHT + 1 + sr, 1);
+		write(STDOUT_FILENO, "\033[K", 3);
+		if (ln)
+		{
+			prt_line(ln, i);
+			ln = ln->next;
+		}
+		else
+			write(STDOUT_FILENO, "\033[90m   ~\033[0m", 11);
+		i++;
+	}
+}
+
+#include "editor.h"
+
+void	set_cursor_position(int row, int col)
+{
+	char	buf[32];
+	int		n;
+
+	n = snprintf(buf, sizeof(buf), "\033[%d;%dH", row, col);
+	write(STDOUT_FILENO, buf, n);
+}
+
+static void	draw_tb_itm(const char *i, int *c, int *r)
+{
+	int	dlen;
+
+	dlen = byte_to_display_col(i, strlen(i));
+	if (*c + dlen + 3 > g_ed.screen_cols && *c > 1)
+	{
+		print_padding(g_ed.screen_cols - *c + 1);
+		(*r)++;
+		set_cursor_position(*r, 1);
+		write(STDOUT_FILENO, "\033[K\033[1;37;48;5;208m", 19);
+		*c = 1;
+	}
+	write(STDOUT_FILENO, " ", 1);
+	write(STDOUT_FILENO, i, strlen(i));
+	write(STDOUT_FILENO, " |", 2);
+	*c += dlen + 3;
+}
+
+void	render_toolbox(void)
+{
+	const char	*itr[11] = {"Opn(^O)", "Sv(^S)", "SvAs(^Sf+S)", "Fnd(^F)", "Go(^G)", "Rpl(^H)", "Cp(^C)", "Ct(^X)", "Pst(^V)", "Ud(^Z)", "Ext(ESC)"};
+	int			c;
+	int			r;
+	int			i;
+
+	set_cursor_position(1, 1);
+	write(STDOUT_FILENO, "\033[K\033[1;37;48;5;208m", 19);
+	c = 1; r = 1; i = -1;
+	while (++i < 11)
+		draw_tb_itm(itr[i], &c, &r);
+	print_padding(g_ed.screen_cols - c + 1);
+	write(STDOUT_FILENO, "\033[0m", 4);
+	set_cursor_position(r + 1, 1);
+	write(STDOUT_FILENO, "\033[K\033[38;5;208m", 15);
+	i = -1;
+	while (++i < g_ed.screen_cols)
+		write(STDOUT_FILENO, "-", 1);
+	write(STDOUT_FILENO, "\033[0m", 4);
+}
+
+void	render_screen(void)
+{
+	int	t_r;
+
+	get_terminal_size(&g_ed.screen_rows, &g_ed.screen_cols);
+	t_r = g_ed.screen_rows - TOOLBOX_HEIGHT - 1;
+	if (g_ed.cursor_row < g_ed.scroll_row)
+		g_ed.scroll_row = g_ed.cursor_row;
+	if (g_ed.cursor_row >= g_ed.scroll_row + t_r)
+		g_ed.scroll_row = g_ed.cursor_row - t_r + 1;
+	write(STDOUT_FILENO, "\033[?25l", 6);
+	render_toolbox();
+	render_lines();
+	render_status_bar();
+	write(STDOUT_FILENO, "\033[?25h", 6);
+}
+
+#include "editor.h"
+
+void	search_text(void)
+{
+	char	query[MAX_SEARCH_LEN];
+
+	if (!prompt_input("Find:", query, MAX_SEARCH_LEN))
+	{
+		clear_search();
+		return ;
+	}
+	strcpy(g_ed.search_query, query);
+	find_matches(query);
+	g_ed.search_active = 1;
+	g_ed.current_match = -1;
+	if (g_ed.match_count > 0)
+		g_ed.current_match = 0;
+}
+
+static void	handle_nav_key(int key, int *run)
+{
+	if (key == KEY_ARROW_RIGHT || key == KEY_ARROW_DOWN)
+		g_ed.current_match = (g_ed.current_match + 1) % g_ed.match_count;
+	else if (key == KEY_ARROW_LEFT || key == KEY_ARROW_UP)
+		g_ed.current_match = (g_ed.current_match - 1 + g_ed.match_count)
+			% g_ed.match_count;
+	else if (key == KEY_ESC || key == KEY_ENTER)
+		*run = 0;
+}
+
+void	navigate_matches(void)
+{
+	char	query[MAX_SEARCH_LEN];
+	int		run;
+
+	if (!prompt_input("Go to:", query, MAX_SEARCH_LEN))
+	{
+		clear_search();
+		return ;
+	}
+	strcpy(g_ed.search_query, query);
+	find_matches(query);
+	g_ed.search_active = 1;
+	if (g_ed.match_count == 0)
+	{
+		g_ed.current_match = -1;
+		return ;
+	}
+	g_ed.current_match = 0;
+	run = 1;
+	while (run)
+	{
+		g_ed.cursor_row = g_ed.matches[g_ed.current_match].row;
+		g_ed.cursor_col = g_ed.matches[g_ed.current_match].col;
+		render_screen();
+		handle_nav_key(read_key(), &run);
+	}
+}
+
+static void	do_replace_in_line(t_line *l, char *old_txt, char *nw_txt)
+{
+	char	*p;
+	int		old_len;
+	int		new_len;
+	int		off;
+	int		pos;
+
+	old_len = strlen(old_txt);
+	new_len = strlen(nw_txt);
+	off = 0;
+	p = strstr(l->text + off, old_txt);
+	while (p != NULL)
+	{
+		pos = (int)(p - l->text);
+		memmove(l->text + pos, l->text + pos + old_len,
+			l->len - pos - old_len);
+		l->len -= old_len;
+		ensure_capacity(l, new_len);
+		memmove(l->text + pos + new_len, l->text + pos, l->len - pos);
+		memcpy(l->text + pos, nw_txt, new_len);
+		l->len += new_len;
+		l->text[l->len] = '\0';
+		off = pos + new_len;
+		p = strstr(l->text + off, old_txt);
+	}
+}
+
+void	replace_all(void)
+{
+	char	old_txt[MAX_SEARCH_LEN];
+	char	nw_txt[MAX_SEARCH_LEN];
+	t_line	*l;
+
+	if (!prompt_input("Find:", old_txt, MAX_SEARCH_LEN))
+		return ;
+	if (!prompt_input("Replace with:", nw_txt, MAX_SEARCH_LEN))
+		return ;
+	l = g_ed.head;
+	while (l)
+	{
+		do_replace_in_line(l, old_txt, nw_txt);
+		l = l->next;
+	}
+	g_ed.modified = 1;
+	clear_search();
+}
+
+#include "editor.h"
+
+void	clear_search(void)
+{
+	free(g_ed.matches);
+	g_ed.matches = NULL;
+	g_ed.match_count = 0;
+	g_ed.current_match = -1;
+	g_ed.search_active = 0;
+	g_ed.search_query[0] = '\0';
+}
+
+static void	add_match(int row, int col, int qlen, int *cap)
+{
+	if (g_ed.match_count >= *cap)
+	{
+		*cap *= 2;
+		g_ed.matches = realloc(g_ed.matches, *cap * sizeof(t_search_match));
+	}
+	g_ed.matches[g_ed.match_count].row = row;
+	g_ed.matches[g_ed.match_count].col = col;
+	g_ed.matches[g_ed.match_count].len = qlen;
+	g_ed.match_count++;
+}
+
+void	find_matches(const char *query)
+{
+	int		cap;
+	int		qlen;
+	t_line	*l;
+	int		row;
+	char	*p;
+
+	clear_search();
+	cap = 64;
+	g_ed.matches = malloc(cap * sizeof(t_search_match));
+	qlen = strlen(query);
+	l = g_ed.head;
+	row = 0;
+	while (l)
+	{
+		p = l->text;
+		while ((p = strstr(p, query)) != NULL)
+		{
+			add_match(row, (int)(p - l->text), qlen, &cap);
+			p += qlen;
+		}
+		l = l->next;
+		row++;
+	}
+}
+
+int	is_search_match(int row, int byte_col)
+{
+	int	i;
+
+	if (!g_ed.search_active)
+		return (0);
+	i = -1;
+	while (++i < g_ed.match_count)
+	{
+		if (g_ed.matches[i].row == row && byte_col >= g_ed.matches[i].col
+			&& byte_col < g_ed.matches[i].col + g_ed.matches[i].len)
+		{
+			if (i == g_ed.current_match)
+				return (2);
+			return (1);
+		}
+	}
+	return (0);
+}
+
+#include "editor.h"
+
+void	clear_selection(void)
+{
+	g_ed.sel.active = 0;
+}
+
+void	start_selection(void)
+{
+	if (!g_ed.sel.active)
+	{
+		g_ed.sel.active = 1;
+		g_ed.sel.start_row = g_ed.cursor_row;
+		g_ed.sel.start_col = g_ed.cursor_col;
+	}
+	g_ed.sel.end_row = g_ed.cursor_row;
+	g_ed.sel.end_col = g_ed.cursor_col;
+}
+
+void	update_selection(void)
+{
+	g_ed.sel.end_row = g_ed.cursor_row;
+	g_ed.sel.end_col = g_ed.cursor_col;
+}
+
+void	normalize_selection(int *sr, int *sc, int *er, int *ec)
+{
+	t_selection	*s;
+
+	s = &g_ed.sel;
+	if (s->start_row < s->end_row || (s->start_row == s->end_row
+			&& s->start_col <= s->end_col))
+	{
+		*sr = s->start_row;
+		*sc = s->start_col;
+		*er = s->end_row;
+		*ec = s->end_col;
+	}
+	else
+	{
+		*sr = s->end_row;
+		*sc = s->end_col;
+		*er = s->start_row;
+		*ec = s->start_col;
+	}
+}
+
+int	is_in_selection(int row, int byte_col)
+{
+	int	sr;
+	int	sc;
+	int	er;
+	int	ec;
+
+	if (!g_ed.sel.active)
+		return (0);
+	normalize_selection(&sr, &sc, &er, &ec);
+	if (row < sr || row > er)
+		return (0);
+	if (row == sr && row == er)
+		return (byte_col >= sc && byte_col < ec);
+	if (row == sr)
+		return (byte_col >= sc);
+	if (row == er)
+		return (byte_col < ec);
+	return (1);
+}
+
+#include "editor.h"
+
+static void	append_to_buf(t_buf *b, t_line *l, int *bounds)
+{
+	int	seg;
+
+	seg = bounds[1] - bounds[0];
+	if (b->len + seg + 2 > b->cap)
+	{
+		b->cap = (b->len + seg + 2) * 2;
+		b->s = realloc(b->s, b->cap);
+	}
+	memcpy(b->s + b->len, l->text + bounds[0], seg);
+	b->len += seg;
+	if (bounds[2] < bounds[3])
+	{
+		b->s[b->len] = '\n';
+		(b->len)++;
+	}
+}
+
+char	*get_selected_text(int *out_len)
+{
+	int		b[4];
+	int		r;
+	t_buf	buf;
+	t_line	*l;
+	int		bd[4];
+
+	if (!g_ed.sel.active)
+	{
+		*out_len = 0;
+		return (NULL);
+	}
+	normalize_selection(&b[0], &b[1], &b[2], &b[3]);
+	buf.cap = 1024; buf.len = 0; buf.s = malloc(buf.cap);
+	r = b[0];
+	while (r <= b[2])
+	{
+		l = get_line_at(r);
+		if (l)
+		{
+			bd[0] = (r == b[0]) ? b[1] : 0;
+			bd[1] = (r == b[2]) ? b[3] : l->len;
+			bd[2] = r; bd[3] = b[2];
+			append_to_buf(&buf, l, bd);
+		}
+		r++;
+	}
+	buf.s[buf.len] = '\0';
+	*out_len = buf.len;
+	return (buf.s);
+}
+
+static const char	g_b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static void	osc52_write_chunk(unsigned char *n3, int chunk)
+{
+	unsigned char	n4[4];
+	int				j;
+
+	n4[0] = (n3[0] & 0xfc) >> 2;
+	n4[1] = ((n3[0] & 0x03) << 4) + ((n3[1] & 0xf0) >> 4);
+	n4[2] = ((n3[1] & 0x0f) << 2) + ((n3[2] & 0xc0) >> 6);
+	n4[3] = n3[2] & 0x3f;
+	if (chunk == 1)
+	{
+		n4[2] = 64;
+		n4[3] = 64;
+	}
+	else if (chunk == 2)
+		n4[3] = 64;
+	j = -1;
+	while (++j < 4)
+	{
+		if (n4[j] == 64)
+			write(STDOUT_FILENO, "=", 1);
+		else
+			write(STDOUT_FILENO, &g_b64[n4[j]], 1);
+	}
+}
+
+static void	osc52_copy(const char *data, int len)
+{
+	int				i;
+	unsigned char	n3[3];
+
+	write(STDOUT_FILENO, "\033]52;c;", 7);
+	i = 0;
+	while (i < len)
+	{
+		n3[0] = data[i++];
+		n3[1] = 0;
+		if (i < len)
+			n3[1] = data[i++];
+		n3[2] = 0;
+		if (i < len)
+			n3[2] = data[i++];
+		osc52_write_chunk(n3, len - (i - 3));
+	}
+	write(STDOUT_FILENO, "\a", 1);
+}
+
+void	copy_selection(void)
+{
+	if (!g_ed.sel.active)
+		return ;
+	free(g_ed.clipboard);
+	g_ed.clipboard = get_selected_text(&g_ed.clipboard_len);
+	if (g_ed.clipboard)
+		osc52_copy(g_ed.clipboard, g_ed.clipboard_len);
+}
+
+static void	del_sel_multiline(int sr, int sc, int er, int ec)
+{
+	t_line	*sl;
+	t_line	*el;
+	int		i;
+
+	sl = get_line_at(sr);
+	el = get_line_at(er);
+	if (sl && el)
+	{
+		sl->len = sc;
+		sl->text[sl->len] = '\0';
+		line_insert_text(sl, sl->len, el->text + ec, el->len - ec);
+		i = er;
+		while (i > sr)
+		{
+			el = get_line_at(sr + 1);
+			if (el)
+			{
+				remove_line(el);
+				free_line(el);
+			}
+			i--;
+		}
+	}
+}
+
+void	delete_selection(void)
+{
+	int		bd[4];
+	char	*st;
+	t_line	*l;
+	int		st_len;
+
+	if (!g_ed.sel.active)
+		return ;
+	normalize_selection(&bd[0], &bd[1], &bd[2], &bd[3]);
+	st = get_selected_text(&st_len);
+	push_undo(UNDO_DELETE_SELECTION, (t_pos){bd[0], bd[1]},
+		(t_str){st, st_len}, (t_pos){bd[2], bd[3]});
+	free(st);
+	if (bd[0] == bd[2])
+	{
+		l = get_line_at(bd[0]);
+		if (l && bd[3] > bd[1])
+		{
+			memmove(l->text + bd[1], l->text + bd[3], l->len - bd[3]);
+			l->len -= (bd[3] - bd[1]);
+			l->text[l->len] = '\0';
+		}
+	}
+	else
+		del_sel_multiline(bd[0], bd[1], bd[2], bd[3]);
+	g_ed.cursor_row = bd[0]; g_ed.cursor_col = bd[1]; g_ed.sel.active = 0; g_ed.modified = 1;
+}
+
+void	cut_selection(void)
+{
+	copy_selection();
+	delete_selection();
+}
+
+#include "editor.h"
+
+static int	parse_modifier_seq(void)
+{
+	char	mod;
+	char	dir;
+
+	if (read(STDIN_FILENO, &mod, 1) != 1) return (KEY_ESC);
+	if (read(STDIN_FILENO, &dir, 1) != 1) return (KEY_ESC);
+	if (mod == '5')
+	{
+		if (dir == 'A') return (CTRL_ARROW_UP);
+		if (dir == 'B') return (CTRL_ARROW_DOWN);
+		if (dir == 'C') return (CTRL_ARROW_RIGHT);
+		if (dir == 'D') return (CTRL_ARROW_LEFT);
+	}
+	else if (mod == '6')
+	{
+		if (dir == 'A') return (CTRL_SHIFT_UP);
+		if (dir == 'B') return (CTRL_SHIFT_DOWN);
+		if (dir == 'C') return (CTRL_SHIFT_RIGHT);
+		if (dir == 'D') return (CTRL_SHIFT_LEFT);
+	}
+	return (KEY_ESC);
+}
+
+static int	parse_tilde_or_mod(char seq1)
+{
+	char	s2;
+
+	if (read(STDIN_FILENO, &s2, 1) != 1) return (KEY_ESC);
+	if (seq1 == '1' && s2 == ';')
+		return (parse_modifier_seq());
+	if (seq1 == '1' && s2 == '~')
+		return (KEY_HOME);
+	if (s2 == '~')
+	{
+		if (seq1 == '3') return (KEY_DELETE);
+		if (seq1 == '4' || seq1 == '8') return (KEY_END);
+		if (seq1 == '5') return (KEY_PAGE_UP);
+		if (seq1 == '6') return (KEY_PAGE_DOWN);
+		if (seq1 == '7') return (KEY_HOME);
+	}
+	return (KEY_ESC);
+}
+
+static int	parse_escape(void)
+{
+	char	seq[2];
+
+	if (read(STDIN_FILENO, &seq[0], 1) != 1) return (KEY_ESC);
+	if (read(STDIN_FILENO, &seq[1], 1) != 1) return (KEY_ESC);
+	if (seq[0] == '[')
+	{
+		if ((seq[1] >= '0' && seq[1] <= '9') || seq[1] == '1')
+			return (parse_tilde_or_mod(seq[1]));
+		if (seq[1] == 'A') return (KEY_ARROW_UP);
+		if (seq[1] == 'B') return (KEY_ARROW_DOWN);
+		if (seq[1] == 'C') return (KEY_ARROW_RIGHT);
+		if (seq[1] == 'D') return (KEY_ARROW_LEFT);
+		if (seq[1] == 'H') return (KEY_HOME);
+		if (seq[1] == 'F') return (KEY_END);
+	}
+	else if (seq[0] == 'O')
+	{
+		if (seq[1] == 'H') return (KEY_HOME);
+		if (seq[1] == 'F') return (KEY_END);
+	}
+	return (KEY_ESC);
+}
+
+int	read_key(void)
+{
+	int		nread;
+	char	c;
+
+	while (1)
+	{
+		nread = read(STDIN_FILENO, &c, 1);
+		if (nread == 1)
+			break ;
+		if (nread == -1 && errno != EAGAIN)
+			die("read");
+	}
+	if (c == '\x1b')
+		return (parse_escape());
+	if (c == 8)
+		return (CTRL_H);
+	return ((int)(unsigned char)c);
+}
+
+#include "editor.h"
+
+void	disable_raw_mode(void)
+{
+	tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_ed.orig_termios);
+	write(STDOUT_FILENO, "\033[?25h", 6);
+	write(STDOUT_FILENO, "\033[0 q", 5);
+}
+
+void	enable_raw_mode(void)
+{
+	struct termios	raw;
+
+	if (tcgetattr(STDIN_FILENO, &g_ed.orig_termios) == -1)
+		die("tcgetattr");
+	raw = g_ed.orig_termios;
+	raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+	raw.c_oflag &= ~(OPOST);
+	raw.c_cflag |= (CS8);
+	raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+	raw.c_cc[VMIN] = 0;
+	raw.c_cc[VTIME] = 1;
+	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
+		die("tcsetattr");
+	write(STDOUT_FILENO, "\033[5 q", 5);
+}
+
+void	get_terminal_size(int *rows, int *cols)
+{
+	struct winsize	ws;
+
+	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1)
+	{
+		*rows = 24;
+		*cols = 80;
+	}
+	else
+	{
+		*rows = ws.ws_row;
+		*cols = ws.ws_col;
+	}
+}
+
+#include "editor.h"
+
+static void	undo_split_line(t_undo_action *a)
+{
+	t_line	*cur;
+	t_line	*nxt;
+
+	cur = get_line_at(a->row);
+	nxt = get_line_at(a->row + 1);
+	if (cur && nxt)
+	{
+		line_insert_text(cur, cur->len, nxt->text, nxt->len);
+		remove_line(nxt);
+		free_line(nxt);
+	}
+	g_ed.cursor_row = a->row;
+	g_ed.cursor_col = a->col;
+}
+
+static void	undo_merge_line(t_undo_action *a)
+{
+	t_line	*ln;
+	t_line	*nl;
+	int		sp;
+
+	ln = get_line_at(a->row);
+	if (!ln)
+		return ;
+	nl = create_line();
+	sp = a->col;
+	if (sp < ln->len)
+	{
+		line_insert_text(nl, 0, ln->text + sp, ln->len - sp);
+		ln->len = sp;
+		ln->text[ln->len] = '\0';
+	}
+	insert_line_after(ln, nl);
+	g_ed.cursor_row = a->row + 1;
+	g_ed.cursor_col = 0;
+}
+
+static void	undo_del_sel_char(t_undo_action *a, int *r, int *c, int *i)
+{
+	t_line	*cl;
+	int		clen;
+
+	clen = utf8_char_len((unsigned char)a->data[*i]);
+	cl = get_line_at(*r);
+	line_insert_char(cl, *c, &a->data[*i], clen);
+	*c += clen;
+	*i += clen - 1;
+}
+
+static void	undo_delete_selection(t_undo_action *a)
+{
+	int		r;
+	int		c;
+	int		i;
+	t_line	*cl;
+	t_line	*nl;
+
+	if (!a->data) return ;
+	r = a->row; c = a->col; i = -1;
+	while (++i < a->data_len)
+	{
+		if (a->data[i] == '\n')
+		{
+			cl = get_line_at(r);
+			nl = create_line();
+			if (c < cl->len)
+			{
+				line_insert_text(nl, 0, cl->text + c, cl->len - c);
+				cl->len = c; cl->text[cl->len] = '\0';
+			}
+			insert_line_after(cl, nl);
+			r++; c = 0;
+		}
+		else
+			undo_del_sel_char(a, &r, &c, &i);
+	}
+	g_ed.cursor_row = a->row; g_ed.cursor_col = a->col;
+}
+
+static void	undo_paste(t_undo_action *a)
+{
+	t_line	*sl;
+	t_line	*el;
+	int		i;
+
+	if (!a->data) return ;
+	if (a->row == a->extra_row)
+	{
+		sl = get_line_at(a->row);
+		if (sl && a->extra_col > a->col)
+		{
+			memmove(sl->text + a->col, sl->text + a->extra_col, sl->len - a->extra_col);
+			sl->len -= (a->extra_col - a->col); sl->text[sl->len] = '\0';
+		}
+	}
+	else
+	{
+		sl = get_line_at(a->row); el = get_line_at(a->extra_row);
+		if (sl && el)
+		{
+			sl->len = a->col; sl->text[sl->len] = '\0';
+			line_insert_text(sl, sl->len, el->text + a->extra_col, el->len - a->extra_col);
+			i = a->extra_row;
+			while (i > a->row)
+			{
+				el = get_line_at(a->row + 1);
+				if (el) { remove_line(el); free_line(el); }
+				i--;
+			}
+		}
+	}
+	g_ed.cursor_row = a->row; g_ed.cursor_col = a->col;
+}
+
+void	execute_complex_undo(t_undo_action *a)
+{
+	if (a->type == UNDO_SPLIT_LINE)
+		undo_split_line(a);
+	else if (a->type == UNDO_MERGE_LINE)
+		undo_merge_line(a);
+	else if (a->type == UNDO_DELETE_SELECTION)
+		undo_delete_selection(a);
+	else if (a->type == UNDO_PASTE)
+		undo_paste(a);
+}
+
+#include "editor.h"
+
+static char	*dup_data(const char *data, int len)
+{
+	char	*res;
+
+	if (!data || len <= 0)
+		return (NULL);
+	res = malloc(len + 1);
+	if (!res)
+		return (NULL);
+	memcpy(res, data, len);
+	res[len] = '\0';
+	return (res);
+}
+
+void	push_undo(t_undo_type t, t_pos p, t_str s, t_pos p_ex)
+{
+	t_undo_action	*a;
+
+	a = malloc(sizeof(t_undo_action));
+	if (!a)
+		return ;
+	a->type = t;
+	a->row = p.r;
+	a->col = p.c;
+	a->data_len = s.len;
+	a->data = dup_data(s.s, s.len);
+	a->extra_row = p_ex.r;
+	a->extra_col = p_ex.c;
+	a->extra_data_len = 0;
+	a->extra_data = NULL;
+	a->next = g_ed.undo_stack;
+	g_ed.undo_stack = a;
+}
+
+void	free_undo_stack(void)
+{
+	t_undo_action	*a;
+
+	while (g_ed.undo_stack)
+	{
+		a = g_ed.undo_stack;
+		g_ed.undo_stack = a->next;
+		free(a->data);
+		free(a->extra_data);
+		free(a);
+	}
+}
+
+static void	execute_simple_undo(t_undo_action *a)
+{
+	t_line	*line;
+
+	if (a->type == UNDO_INSERT_CHAR)
+	{
+		line = get_line_at(a->row);
+		if (line)
+			line_delete_char(line, a->col, a->data_len);
+		g_ed.cursor_row = a->row;
+		g_ed.cursor_col = a->col;
+	}
+	else if (a->type == UNDO_DELETE_CHAR)
+	{
+		line = get_line_at(a->row);
+		if (line && a->data)
+			line_insert_text(line, a->col, a->data, a->data_len);
+		g_ed.cursor_row = a->row;
+		g_ed.cursor_col = a->col + a->data_len;
+	}
+}
+
+void	undo(void)
+{
+	t_undo_action	*a;
+
+	a = g_ed.undo_stack;
+	if (!a)
+		return ;
+	g_ed.undo_stack = a->next;
+	if (a->type == UNDO_INSERT_CHAR || a->type == UNDO_DELETE_CHAR)
+		execute_simple_undo(a);
+	else
+		execute_complex_undo(a);
+	g_ed.modified = 1;
+	free(a->data);
+	free(a->extra_data);
+	free(a);
+}
+
+#include "editor.h"
+
+int	word_start_before(const char *text, int pos)
+{
+	int	pp;
+
+	if (pos <= 0)
+		return (0);
+	pos = prev_utf8_char_start(text, pos);
+	while (pos > 0 && text[pos] == ' ')
+		pos = prev_utf8_char_start(text, pos);
+	while (pos > 0)
+	{
+		pp = prev_utf8_char_start(text, pos);
+		if (text[pp] == ' ')
+			break ;
+		pos = pp;
+	}
+	return (pos);
+}
+
+int	word_end_after(const char *text, int len, int pos)
+{
+	if (pos >= len)
+		return (len);
+	while (pos < len && text[pos] == ' ')
+		pos = next_utf8_char_end(text, len, pos);
+	while (pos < len && text[pos] != ' ')
+		pos = next_utf8_char_end(text, len, pos);
+	return (pos);
+}
+
+#include "editor.h"
+
+int	utf8_char_len(unsigned char c)
+{
+	if (c < 0x80)
+		return (1);
+	if ((c & 0xE0) == 0xC0)
+		return (2);
+	if ((c & 0xF0) == 0xE0)
+		return (3);
+	if ((c & 0xF8) == 0xF0)
+		return (4);
+	return (1);
+}
+
+int	prev_utf8_char_start(const char *text, int pos)
+{
+	if (pos <= 0)
+		return (0);
+	pos--;
+	while (pos > 0 && ((unsigned char)text[pos] & 0xC0) == 0x80)
+		pos--;
+	return (pos);
+}
+
+int	next_utf8_char_end(const char *text, int len, int pos)
+{
+	int	cl;
+
+	if (pos >= len)
+		return (len);
+	cl = utf8_char_len((unsigned char)text[pos]);
+	if (pos + cl > len)
+		return (len);
+	return (pos + cl);
+}
+
+int	byte_to_display_col(const char *text, int byte_pos)
+{
+	int	col;
+	int	i;
+	int	cl;
+
+	col = 0;
+	i = 0;
+	while (i < byte_pos)
+	{
+		cl = utf8_char_len((unsigned char)text[i]);
+		i += cl;
+		col++;
+	}
+	return (col);
+}
+
+int	display_to_byte_col(const char *text, int len, int dcol)
+{
+	int	col;
+	int	i;
+	int	cl;
+
+	col = 0;
+	i = 0;
+	while (i < len && col < dcol)
+	{
+		cl = utf8_char_len((unsigned char)text[i]);
+		i += cl;
+		col++;
+	}
+	return (i);
+}
